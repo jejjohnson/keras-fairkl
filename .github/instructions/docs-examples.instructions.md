@@ -6,24 +6,31 @@ applyTo: "docs/**/*.py,docs/**/*.md,notebooks/**/*.py"
 
 ## Overview
 
-Example notebooks live in `docs/notebooks/` (or `notebooks/`) as **jupytext percent-format `.py` files**. They are the single source of truth for all figures, tables, and timing data shown in the documentation.
+Example notebooks live in `docs/notebooks/` as **jupytext percent-format `.py` files**. They are the single source of truth for all code. Pre-executed `.ipynb` files (with inline figure outputs) are committed alongside them and rendered by mkdocs.
 
-**Execution model**: `mkdocs-jupyter` renders notebooks with `execute: false`. Authors run notebooks locally, save artifacts to `docs/images/`, and commit both the `.py` source and the generated PNGs.
+**Execution model**: `mkdocs-jupyter` renders notebooks with `execute: false`. Authors run notebooks locally via `jupytext --to notebook --execute`, producing `.ipynb` files with inline outputs. Both `.py` and `.ipynb` are committed.
 
 ## Directory Layout
 
 ```
 docs/
-├── images/
-│   └── {notebook_name}/      # one subdirectory per notebook
-│       ├── figure_one.png
-│       ├── convergence.png
-│       └── accuracy_timing.png
 ├── notebooks/
-│   ├── demo_foo.py            # jupytext percent-format
+│   ├── _style.py              # shared plot styling
+│   ├── demo_foo.py            # jupytext percent-format (source)
+│   ├── demo_foo.ipynb         # pre-executed (committed)
 │   └── benchmark_bar.py
-└── guide.md                   # markdown page embedding saved images
+│   └── benchmark_bar.ipynb
+└── guide.md
 ```
+
+## Workflow
+
+1. Write the `.py` source (jupytext percent format)
+2. Execute locally: `jupytext --to notebook --execute foo.py -o foo.ipynb`
+3. Commit both the `.py` source and the executed `.ipynb`
+4. `mkdocs-jupyter` renders the pre-executed `.ipynb` with `execute: false`
+
+Figures render inline via `plt.show()`. Do **not** use `savefig` or commit separate PNG files. The `.ipynb` cell outputs are the single source of rendered figures.
 
 ## Jupytext Header
 
@@ -57,7 +64,7 @@ Every notebook `.py` file must start with this header:
 # Some explanation with LaTeX: $\nabla^2 \psi = f$
 
 # %%
-import jax.numpy as jnp
+import keras.ops as ops
 ```
 
 ## Notebook Structure
@@ -65,124 +72,67 @@ import jax.numpy as jnp
 Every example notebook should follow this order:
 
 1. **Title & overview** (markdown) — what the notebook demonstrates, prerequisites
-2. **Imports & image directory setup** (code)
-3. **Problem setup** (markdown + code) — grid, parameters, initial conditions
+2. **Imports** (code) — set `KERAS_BACKEND`, import libraries
+3. **Problem setup** (markdown + code) — data, parameters
 4. **Core computation** (markdown + code) — the actual demonstration
-5. **Figures & tables** (code) — generate, save, and display
-6. **Embedded images** (markdown) — reference the saved PNGs for static rendering
-7. **Summary / takeaways** (markdown)
+5. **Figures & tables** (code) — generate and display with `plt.show()`
+6. **Summary / takeaways** (markdown)
 
-## Image Directory Setup
+## Figures
 
-Always use `Path(__file__)` for portability. Create the directory eagerly:
-
-```python
-from pathlib import Path
-
-IMG_DIR = Path(__file__).resolve().parent.parent / "images" / "notebook_name"
-IMG_DIR.mkdir(parents=True, exist_ok=True)
-```
-
-## Saving Figures
-
-Use a consistent `savefig` pattern — **always save before `plt.show()`**:
+Use `plt.show()` to render figures inline. The executed `.ipynb` captures the output as base64-encoded images.
 
 ```python
-fig.savefig(IMG_DIR / "descriptive_name.png", dpi=150, bbox_inches="tight")
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(x, y, "o-", color="C0", lw=2)
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+style_ax(ax)
+plt.tight_layout()
 plt.show()
 ```
 
-- **DPI**: 150 (good balance of quality and file size)
-- **`bbox_inches="tight"`**: prevents clipped labels
-- **Format**: PNG (committed to git)
-- **Naming**: lowercase, underscores, descriptive (e.g., `convergence.png`, `scheme_comparison.png`)
+Do **not** use `savefig` or `IMG_DIR`. Do **not** add markdown cells with `![image](...)` embeds.
 
-## Embedding Images in Markdown Cells
+## Plot Styling
 
-After every `savefig` code cell, add a markdown cell that embeds the image. This is what renders in the static docs (since `execute: false`):
+Import shared styling from `_style.py`:
 
 ```python
-# %% [markdown]
-# ![Convergence rates](../images/notebook_name/convergence.png)
+from _style import SCATTER_KW, style_ax
 ```
 
-The relative path `../images/` goes up from `docs/notebooks/` to `docs/`.
-
-> **Note**: The path is relative to the source `.py` file location (`docs/notebooks/`), not the built site URL. One `../` is enough to reach `docs/images/`.
-
-## Embedding Images in Standalone Markdown Pages
-
-For dedicated documentation pages (e.g., `docs/guide.md`) that reference notebook-generated images:
-
-```markdown
-!!! note "Reproducing these figures"
-    These figures are generated by the Example notebook (`notebooks/demo_foo.py`).
-
-![Descriptive alt text](images/notebook_name/figure.png)
-```
-
-## Timing & Benchmarks
-
-For performance comparisons, use a JIT-warm-then-measure pattern:
-
-```python
-import time
-import jax
-
-def time_fn(fn, warmup=2, repeats=5):
-    """JIT-compile, warm up, then time *repeats* calls (seconds)."""
-    jitted = jax.jit(fn)
-    for _ in range(warmup):
-        jitted().block_until_ready()
-    t0 = time.perf_counter()
-    for _ in range(repeats):
-        jitted().block_until_ready()
-    return (time.perf_counter() - t0) / repeats
-```
-
-Key rules:
-- **Always warm up** JIT-compiled functions before timing
-- **Use `block_until_ready()`** for JAX async dispatch
-- **Collect results into a dict/list**, then produce a summary figure or table at the end
-- **Save timing figures** alongside other images (e.g., `accuracy_timing.png`)
+- `style_ax(ax)` — applies grid and minor ticks
+- `SCATTER_KW` — consistent scatter plot kwargs (s=30, black edges, alpha=0.5)
 
 ## Tables & Statistics
 
-For comparison tables, print them in a code cell and also render as markdown:
+For comparison tables, print them in a code cell:
 
 ```python
 # %%
-# Print table for notebook execution
 for name, stats in results.items():
-    print(f"{name:20s}  time={stats['time_ms']:8.2f} ms  residual={stats['residual']:.2e}")
-
-# %% [markdown]
-# | Solver | Time (ms) | Residual |
-# |--------|-----------|----------|
-# | DST    | 0.42      | 1.2e-14  |
-# | CG     | 3.18      | 8.7e-11  |
+    print(f"{name:20s}  time={stats['time_ms']:8.2f} ms")
 ```
 
-When the table is generated programmatically during execution, the code cell output shows it. The markdown cell provides a static fallback for `execute: false` rendering. **Keep both in sync** after re-running.
+The code cell output in the `.ipynb` is the rendered table.
 
-## Matplotlib Backend
+## mkdocs.yml Nav
 
-Use the non-interactive backend at the top of every notebook to avoid display issues in CI or headless environments:
+Point nav entries to `.ipynb` files (not `.py`):
 
-```python
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+```yaml
+nav:
+  - Examples:
+      - Demo: notebooks/demo_foo.ipynb
 ```
 
 ## Checklist for New Notebooks
 
 - [ ] Jupytext header present
-- [ ] `IMG_DIR` setup with `Path(__file__)` and `mkdir`
-- [ ] `matplotlib.use("Agg")` before any `plt` import
-- [ ] Every figure saved with `savefig(..., dpi=150, bbox_inches="tight")`
-- [ ] Every saved figure followed by a markdown cell embedding it
-- [ ] Timing uses warm-up + `block_until_ready()` (if JAX)
-- [ ] Static markdown tables match printed output
-- [ ] Notebook listed in `mkdocs.yml` nav
-- [ ] Generated PNGs committed to `docs/images/{notebook_name}/`
+- [ ] `KERAS_BACKEND` set before imports
+- [ ] Every figure uses `plt.show()` (no `savefig`)
+- [ ] No `IMG_DIR` or `Path(__file__)` setup
+- [ ] No markdown image embed cells (`![](...)`)
+- [ ] Notebook listed in `mkdocs.yml` nav (pointing to `.ipynb`)
+- [ ] Both `.py` and executed `.ipynb` committed

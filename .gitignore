@@ -117,3 +117,5 @@ venv.bak/
 
 # Plans (tracked via GitHub issues, not committed)
 .plans/
+# internal data that should not be pushed
+.data/

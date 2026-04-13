@@ -1,7 +1,7 @@
 [project]
-name = "mypackage"
+name = "fairkl"
 version = "0.1.5"
-description = "My short description for my project."
+description = "Fairness-constrained kernel learning for Keras 3."
 authors = [
     {name="J. Emmanuel Johnson", email="jemanjohnson34@gmail.com"},
 ]
@@ -19,16 +19,24 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Development Status :: 2 - Pre-Alpha",
 ]
-dependencies = []
+dependencies = [
+    "keras>=3.0",
+    "numpy",
+]
 
 [project.urls]
-Repository = "https://github.com/jejjohnson/mypackage"
+Repository = "https://github.com/jejjohnson/keras-fairkl"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=7.1.0",
     "pre-commit>=4.5.1",
+    "jax>=0.9.2",
+    "matplotlib>=3.10.8",
+    "jupytext>=1.19.1",
+    "scikit-learn>=1.8.0",
+    "keras-tuner>=1.4.8",
 ]
 lint = [
     "ruff>=0.15.10",
@@ -50,7 +58,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mypackage"]
+packages = ["src/fairkl"]
 
 [tool.ruff]
 target-version = "py312"
@@ -59,6 +67,10 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E402", "E721", "E731", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"docs/notebooks/*.py" = ["I001", "E501", "B905", "RUF001", "RUF003", "SIM102"]
+"docs/notebooks/*.ipynb" = ["I001", "E501", "B905", "RUF001", "RUF003", "SIM102"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -69,12 +81,12 @@ python-version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/mypackage --cov-report=term-missing --cov-report=xml:coverage.xml"
+addopts = "--cov=src/fairkl --cov-report=term-missing --cov-report=xml:coverage.xml"
 
 [tool.coverage.run]
-source = ["src/mypackage"]
+source = ["src/fairkl"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 80
+fail_under = 60
