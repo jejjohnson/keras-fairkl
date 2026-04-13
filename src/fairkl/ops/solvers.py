@@ -89,10 +89,13 @@ def solve_cg(A, b, x0=None, maxiter: int = 100, tol: float = 1e-5):
     (where ``n`` is the system size).  In practice, convergence is much
     faster when ``A`` is well-conditioned or has clustered eigenvalues.
 
-    This implementation uses a **fixed-iteration Python loop** (not a
-    traced ``while_loop``), so it is compatible with all Keras backends
-    including JIT compilation.  The trade-off is that ``maxiter`` is
-    baked into the computation graph at trace time.
+    This implementation uses a **fixed-iteration Python loop** with a
+    convergence mask (not a traced ``while_loop`` or host-side
+    ``float()`` check), so it is fully compatible with JIT compilation
+    on all Keras backends.  After convergence, the search direction
+    is zeroed via the mask, so subsequent iterations are effectively
+    no-ops.  The trade-off is that ``maxiter`` iterations are always
+    executed in the computation graph.
 
     Args:
         A: Symmetric positive-definite matrix of shape ``(n, n)``, **or**
@@ -100,7 +103,9 @@ def solve_cg(A, b, x0=None, maxiter: int = 100, tol: float = 1e-5):
             product without forming ``A`` explicitly (matrix-free mode).
             Matrix-free mode is useful when ``A`` is too large to store
             or has exploitable structure (e.g., Kronecker, sparse).
-        b: Right-hand side tensor of shape ``(n,)`` or ``(n, k)``.
+        b: Right-hand side tensor of shape ``(n,)`` or ``(n, 1)``.
+            Multi-column right-hand sides ``(n, k)`` with ``k > 1`` are
+            **not supported** — use :func:`solve_cholesky` instead.
         x0: Initial guess tensor with the same shape as ``b``.  A good
             initial guess can dramatically reduce the number of
             iterations.  Defaults to the zero vector.
@@ -169,9 +174,11 @@ def solve_cg(A, b, x0=None, maxiter: int = 100, tol: float = 1e-5):
         x = x + alpha * p
         r = r - alpha * Ap
         rs_new = ops.sum(r * r)
-        if float(rs_new) < float(tol_sq):
-            break
-        beta = rs_new / (rs_old + 1e-30)
+        # Scale updates by a convergence mask to effectively "stop"
+        # without a Python-level break (which would require host
+        # materialization and break JIT tracing).
+        converged = ops.cast(rs_new < tol_sq, dtype=rs_new.dtype)
+        beta = (1.0 - converged) * rs_new / (rs_old + 1e-30)
         p = r + beta * p
         rs_old = rs_new
 

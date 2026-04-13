@@ -204,6 +204,12 @@ class FairKernelRidgeHyperModel(kt.HyperModel):
 
         cka_val = 0.0
         if q_eval is not None:
-            cka_val = float(cka_rbf(y_pred.reshape(-1, 1).astype("float32"), q_eval))
+            cka_val = float(
+                cka_rbf(
+                    y_pred.reshape(-1, 1).astype("float32"),
+                    q_eval.astype("float32"),
+                    sigma_q=model.sigma_q,
+                )
+            )
 
         return {"val_mse": mse, "val_cka": cka_val}

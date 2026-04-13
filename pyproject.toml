@@ -24,6 +24,10 @@ dependencies = [
     "numpy",
 ]
 
+[project.optional-dependencies]
+sklearn = ["scikit-learn>=1.4"]
+tuning = ["keras-tuner>=1.4"]
+
 [project.urls]
 Repository = "https://github.com/jejjohnson/keras-fairkl"
 
@@ -89,4 +93,4 @@ omit = ["tests/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 60
+fail_under = 70

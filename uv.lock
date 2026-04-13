@@ -482,6 +482,14 @@ dependencies = [
     { name = "numpy" },
 ]
 
+[package.optional-dependencies]
+sklearn = [
+    { name = "scikit-learn" },
+]
+tuning = [
+    { name = "keras-tuner" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "jax" },
@@ -511,8 +519,11 @@ typecheck = [
 [package.metadata]
 requires-dist = [
     { name = "keras", specifier = ">=3.0" },
+    { name = "keras-tuner", marker = "extra == 'tuning'", specifier = ">=1.4" },
     { name = "numpy" },
+    { name = "scikit-learn", marker = "extra == 'sklearn'", specifier = ">=1.4" },
 ]
+provides-extras = ["sklearn", "tuning"]
 
 [package.metadata.requires-dev]
 dev = [
