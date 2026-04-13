@@ -16,6 +16,8 @@
 # # FairPCA
 #
 # Fair PCA with CKA penalty (100 epochs).
+#
+# FairPCA finds linear projections that maximize variance while minimizing dependence on a sensitive attribute. Use it for fair dimensionality reduction before downstream tasks.
 
 # %%
 from __future__ import annotations
@@ -56,6 +58,12 @@ print(f"n={n}, d={X.shape[1]}, A={group_a.sum()}, B={(~group_a).sum()}")
 
 # %% [markdown]
 # ## Standard vs Fair PCA
+#
+# > **Orthogonality constraint.** FairPCA enforces V^T V = I via a soft
+# > penalty in the loss, not a hard projection. This keeps the
+# > optimization smooth and JIT-friendly, but means the learned V may
+# > not be perfectly orthonormal -- check `V^T V` if you need strict
+# > orthogonality downstream.
 
 # %%
 pca_std = FairPCA(n_components=2, mu=0.0)
@@ -119,8 +127,7 @@ plt.show()
 # ## Fairness Sweep
 
 # %%
-# Use the standard PCA solution (mu=0) as the warm-start for all
-# fairness-penalized runs, so the optimizer traces a consistent path.
+# Use the standard PCA solution (mu=0) as the warm-start for all fairness-penalized runs, so the optimizer traces a consistent path.
 
 mus = [0, 10, 50, 100, 500]
 recon_list, cka_list = [], []

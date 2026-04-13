@@ -15,8 +15,9 @@
 # %% [markdown]
 # # Layer 0 -- Kernel Primitives
 #
-# Pure-function primitives: exact kernels, approximate kernels,
-# centering, HSIC, and MMD.
+# Pure-function primitives: exact kernels, approximate kernels, centering, HSIC, and MMD.
+#
+# This notebook demonstrates the Layer 0 primitives -- the pure functions that underpin all fairness metrics and kernel computations in fairkl. These functions are stateless, use only `keras.ops`, and can be called independently without any model infrastructure.
 
 # %%
 from __future__ import annotations
@@ -119,9 +120,7 @@ plt.show()
 # %% [markdown]
 # ## CKA: Normalized Dependence (Biased + Debiased)
 #
-# CKA normalizes HSIC to [0, 1]: `CKA = HSIC(K,L) / sqrt(HSIC(K,K) * HSIC(L,L))`.
-# **Debiased CKA** (Murphy et al., ICLR 2024) corrects the finite-sample
-# bias that inflates biased CKA in high-dimensional settings.
+# CKA normalizes HSIC to [0, 1]: `CKA = HSIC(K,L) / sqrt(HSIC(K,K) * HSIC(L,L))`. **Debiased CKA** (Murphy et al., ICLR 2024) corrects the finite-sample bias that inflates biased CKA in high-dimensional settings.
 
 # %%
 # Scatter comparison — same pairs as HSIC, now with CKA values.
@@ -244,6 +243,13 @@ plt.show()
 
 # %% [markdown]
 # ## Random Fourier Features Approximation
+#
+# > **When to use RFF vs exact kernels.** Exact kernel matrices are
+# > O(n^2) in memory and O(n^2 d) to compute. For n > ~1000 this
+# > becomes the bottleneck; Random Fourier Features approximate the RBF
+# > kernel in O(nD) time with D random features, where D << n typically
+# > suffices. The plots below show how approximation error drops as D
+# > increases.
 
 # %%
 X_small = rng.standard_normal((30, 3)).astype("float32")

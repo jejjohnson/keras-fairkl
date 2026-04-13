@@ -15,8 +15,9 @@
 # %% [markdown]
 # # FairKernelRidge
 #
-# Fair kernel ridge regression with CKA penalty.
-# `mu=0` uses exact closed-form; `mu>0` uses gradient descent.
+# Fair kernel ridge regression with CKA penalty. `mu=0` uses exact closed-form; `mu>0` uses gradient descent.
+#
+# Quick reference for FairKernelRidge -- the primary model in fairkl. Shows the fairness-accuracy Pareto frontier for a simple synthetic problem. For a detailed walkthrough of the math and numerics, see the Tutorial series (Parts 1-4).
 
 # %%
 from __future__ import annotations
@@ -49,11 +50,16 @@ print(f"Corr(y, q) = {np.corrcoef(y, q.ravel())[0, 1]:.3f}")
 
 # %% [markdown]
 # ## Sweep mu
+#
+# > **Warm-starting strategy.** The `mu=0` solution has a closed form
+# > (standard kernel ridge regression). When `mu>0`, the model uses
+# > gradient descent initialized from that closed-form solution. This
+# > warm start dramatically improves convergence speed -- without it,
+# > the optimizer must simultaneously learn the regression weights and
+# > satisfy the fairness penalty from scratch.
 
 # %%
-# mu=0 uses exact closed-form; mu>0 uses gradient descent warm-started
-# from the exact solution.  We evaluate with more epochs to ensure
-# convergence at low mu.
+# mu=0 uses exact closed-form; mu>0 uses gradient descent warm-started from the exact solution.  We evaluate with more epochs to ensure convergence at low mu.
 mus = [0, 1, 5, 10, 20]
 mse_list, cka_list = [], []
 

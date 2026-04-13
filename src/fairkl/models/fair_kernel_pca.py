@@ -10,16 +10,24 @@ The optimization objective is::
     max_V  tr(V^T K_c V) - mu * CKA(K_c V, q)
     s.t.   V^T V = I
 
-where ``K_c`` is the centered kernel matrix, ``V`` is the ``(n, k)``
-matrix of dual coefficients defining the projection directions in the
-RKHS, and ``mu`` controls the fairness penalty.
+where ``K_c = H K H`` is the ``(n, n)`` centered kernel (Gram) matrix
+(``H = I - (1/n) 11^T`` is the centering matrix), ``V`` is the
+``(n, k)`` matrix of dual coefficients defining the ``k`` projection
+directions in the RKHS, ``mu >= 0`` controls the CKA fairness penalty,
+and ``q`` encodes sensitive attributes.
 
-Out-of-sample ``transform`` follows the scikit-learn ``KernelPCA``
-convention: a cross-kernel matrix is computed and centered using stored
-training statistics, then multiplied by ``V``.
+**Out-of-sample extension** follows the scikit-learn ``KernelPCA``
+convention (Pedregosa et al., 2011): during ``fit``, the column means
+and grand mean of the training kernel matrix are stored; at
+``transform`` time, a cross-kernel matrix is computed and centered
+using these stored statistics, then multiplied by ``V``.  This avoids
+recomputing or storing the full training kernel matrix at test time.
 
-``inverse_transform`` uses kernel ridge regression for the pre-image
-problem (Bakir et al., 2004).
+**Pre-image reconstruction** (``inverse_transform``) uses kernel ridge
+regression to learn a mapping from the low-dimensional projections back
+to input space, following the approach of Bakir et al. (2004).
+
+See :class:`FairPCA` for the primal-form (linear) variant.
 """
 
 from __future__ import annotations
@@ -44,52 +52,106 @@ class FairKernelPCA(keras.Model):
 
     .. math::
         \max_{V}\;
-            \frac{1}{n}\,\mathrm{tr}\!\bigl(V^\top K_c V\bigr)
-          - \mu\, \mathrm{CKA}(K_c V,\; q)
+            \underbrace{
+                \frac{1}{n}\,\mathrm{tr}\!\bigl(V^\top K_c V\bigr)
+            }_{\text{variance in RKHS}}
+          - \underbrace{
+                \mu\, \mathrm{CKA}(K_c V,\; q)
+            }_{\text{fairness penalty}}
         \quad\text{s.t.}\quad V^\top V = I_k
 
     where :math:`K_c = H K H` is the centered kernel matrix
-    (:math:`H = I - \tfrac{1}{n}\mathbf{1}\mathbf{1}^\top`),
-    :math:`k` is ``n_components``, and :math:`\mu` controls the
-    fairness penalty.  The orthogonality constraint is relaxed via a
-    quadratic penalty, as in :class:`FairPCA`.
+    (:math:`H = I - \tfrac{1}{n}\mathbf{1}\mathbf{1}^\top` is the
+    centering matrix), :math:`k` is ``n_components``, and
+    :math:`\mu \ge 0` controls the fairness penalty.  The
+    orthogonality constraint is relaxed via a quadratic penalty (weight
+    ``10.0``), as in :class:`FairPCA`.
+
+    **Relationship to standard kernel PCA.** In standard kernel PCA
+    (Scholkopf et al., 1998), the top-:math:`k` eigenvectors of
+    :math:`K_c` define the projection.  Here, the eigendecomposition
+    is replaced by gradient-based optimization, which allows
+    incorporating the non-linear CKA fairness penalty.  When ``mu=0``,
+    the solution converges to the standard kernel PCA directions (up
+    to optimization tolerance and the orthogonality relaxation).
 
     **Out-of-sample extension** follows the scikit-learn ``KernelPCA``
-    pattern.  During ``fit``, the column means and global mean of the
-    training kernel matrix are stored.  At ``transform`` time, a
-    cross-kernel :math:`K(X_{\text{test}}, X_{\text{train}})` is
-    computed and centered using these stored statistics (without
-    recomputing or storing the full training kernel).
+    centering pattern (Pedregosa et al., 2011).  During :meth:`fit`,
+    the column means :math:`\bar{K}_{\mathrm{col}}` (shape
+    ``(1, n)``) and global mean :math:`\bar{K}_{\mathrm{total}}`
+    (scalar) of the training kernel matrix are stored.  At
+    :meth:`transform` time, a cross-kernel
+    :math:`K(X_{\text{test}}, X_{\text{train}})` is computed and
+    centered using these stored statistics:
 
-    **Pre-image reconstruction** (``inverse_transform``) uses kernel
-    ridge regression to learn a mapping from the low-dimensional
-    projections back to input space, following Bakir et al. (2004).
+    .. math::
+        \tilde{K} = K_{\text{cross}}
+          - \bar{K}_{\mathrm{col}}
+          - \mathrm{rowmean}(K_{\text{cross}})
+          + \bar{K}_{\mathrm{total}}
+
+    This avoids recomputing or storing the full ``(n, n)`` training
+    kernel at test time.
+
+    **Pre-image reconstruction** (:meth:`inverse_transform`) uses
+    kernel ridge regression to learn a mapping from the
+    low-dimensional projections back to input space, following Bakir
+    et al. (2004).  Specifically, it solves
+    :math:`C = (K_Z + \alpha I)^{-1} X_{\text{train}}` where
+    :math:`K_Z = Z_{\text{train}} Z_{\text{train}}^\top` is the
+    linear kernel in projection space, and then maps new projections
+    via :math:`\hat{X} = Z Z_{\text{train}}^\top C`.
 
     Args:
         n_components (int): Number of kernel principal components
-            ``k`` to retain.  Must be positive and at most ``n`` (the
-            number of training samples).
+            ``k`` to retain.  Must satisfy
+            ``1 <= n_components <= n`` where ``n`` is the number of
+            training samples.
         sigma (float): RBF bandwidth for the feature kernel
             :math:`k(x, x') = \exp(-\|x-x'\|^2 / (2\sigma^2))`.
-            Ignored when ``kernel="linear"``.  Default ``1.0``.
-        mu (float): CKA fairness penalty weight :math:`\mu`.  ``mu=0``
-            recovers standard kernel PCA.  Larger values enforce
-            stronger statistical independence between the projections
-            and sensitive attributes.  Default ``1.0``.
+            Controls the length scale of the kernel.  Ignored when
+            ``kernel="linear"``.  Default ``1.0``.
+        mu (float): CKA fairness penalty weight :math:`\mu \ge 0`.
+            ``mu=0`` recovers standard kernel PCA.  Larger values
+            enforce stronger statistical independence between the
+            projections and sensitive attributes.  Typical values
+            range from ``0.01`` to ``10.0``.  Default ``1.0``.
         sigma_q (float): RBF bandwidth for the sensitive-attribute
             kernel inside CKA.  Default ``1.0``.
-        kernel (str): Kernel type.  One of ``"rbf"`` (Gaussian /
-            squared-exponential) or ``"linear"``
-            (:math:`k(x,x') = x^\top x'`).  Default ``"rbf"``.
+        kernel (str): Kernel type.  One of:
+
+            - ``"rbf"`` -- Gaussian / squared-exponential kernel
+              :math:`k(x,x') = \exp(-\|x-x'\|^2 / 2\sigma^2)`.
+            - ``"linear"`` -- linear kernel
+              :math:`k(x,x') = x^\top x'` (no bandwidth parameter).
+
+            Default ``"rbf"``.
         alpha (float): Ridge regularization parameter for the
-            ``inverse_transform`` pre-image regression.  Larger values
-            improve numerical stability at the cost of reconstruction
-            fidelity.  Default ``1.0``.
+            :meth:`inverse_transform` pre-image regression.  Larger
+            values improve numerical stability at the cost of
+            reconstruction fidelity.  Default ``1.0``.
         **kwargs: Additional keyword arguments passed to
-            ``keras.Model.__init__``.
+            ``keras.Model.__init__`` (e.g. ``name``, ``dtype``).
+
+    Attributes:
+        n_components (int): Number of retained components.
+        sigma (float): Stored RBF bandwidth.
+        mu (float): Stored CKA penalty weight.
+        sigma_q (float): Stored sensitive-attribute RBF bandwidth.
+        kernel (str): Stored kernel type.
+        alpha (float): Stored pre-image ridge parameter.
+        _X_train (Tensor or None): Training inputs stored after
+            :meth:`fit`, shape ``(n, d)``.  Used by :meth:`transform`
+            and :meth:`inverse_transform`.
+        _V (Variable or None): Dual coefficient matrix of shape
+            ``(n, k)``, optimized during :meth:`fit`.
+        _K_col_mean (Tensor or None): Column means of the training
+            kernel, shape ``(1, n)``.  Used for cross-kernel centering.
+        _K_total_mean (Tensor or None): Grand mean (scalar) of the
+            training kernel.  Used for cross-kernel centering.
 
     Examples:
-        Fit, transform, and reconstruct:
+        Full fit, transform, and reconstruct workflow:
 
         >>> import numpy as np
         >>> from fairkl.models import FairKernelPCA
@@ -97,42 +159,68 @@ class FairKernelPCA(keras.Model):
         >>> q = np.random.randn(150, 1).astype("float32")
         >>> model = FairKernelPCA(n_components=3, sigma=1.0, mu=0.5)
         >>> model.fit(X, q=q, epochs=200, lr=1e-2)
-        >>> Z = model.transform(X)          # shape (150, 3)
+        >>> Z = model.transform(X)              # shape (150, 3)
         >>> X_hat = model.inverse_transform(Z)  # shape (150, 8)
 
         One-step ``fit_transform``:
 
         >>> Z = model.fit_transform(X, q=q, epochs=200, lr=1e-2)
 
+        Out-of-sample projection (no recomputation of training kernel):
+
+        >>> X_new = np.random.randn(50, 8).astype("float32")
+        >>> Z_new = model.transform(X_new)  # shape (50, 3)
+
     Note:
         * The centered kernel matrix :math:`K_c` is computed once
-          during ``fit`` and reused for all optimization epochs.
+          during :meth:`fit` and reused for all optimization epochs.
+          It is **not** stored after fitting -- only the centering
+          statistics are kept.
         * Centering statistics (``_K_col_mean``, ``_K_total_mean``)
-          are stored so that ``transform`` can center the cross-kernel
-          efficiently without recomputing or storing :math:`K_{\text{train}}`.
-        * Computational complexity per epoch is :math:`O(n^2 k)` for
-          the projection plus :math:`O(n^2)` for the CKA term.
-          Building the kernel matrix costs :math:`O(n^2 d)`.
-        * ``inverse_transform`` solves an :math:`n \times n` linear
-          system, costing :math:`O(n^3)`.
+          are stored so that :meth:`transform` can center the
+          cross-kernel efficiently without recomputing or storing
+          :math:`K_{\text{train}}`.
+        * **Computational complexity:**
+
+          - ``fit``: :math:`O(n^2 d)` to build the kernel, then
+            :math:`O(n^2 k)` per epoch for the projection gradient,
+            plus :math:`O(n^2)` per epoch for the CKA term.
+          - ``transform``: :math:`O(m \cdot n \cdot d)` to build the
+            cross-kernel plus :math:`O(m \cdot n \cdot k)` for the
+            projection.
+          - ``inverse_transform``: :math:`O(n^2 d + n^3)` to solve the
+            ridge system, plus :math:`O(m \cdot n)` for the
+            pre-image mapping.
+
+        * :meth:`inverse_transform` recomputes the training kernel and
+          projections each time it is called.  Cache the result if
+          calling repeatedly with the same ``Z``.
 
     References:
-        * Scholkopf, B. et al. (1998). "Nonlinear Component Analysis
-          as a Kernel Eigenvalue Problem." *Neural Computation*, 10(5),
-          1299--1319.  (Kernel PCA.)
-        * Bakir, G. et al. (2004). "Learning to Find Pre-Images."
-          *NeurIPS*.  (Kernel ridge regression pre-image.)
-        * Cortes, C. et al. (2012). "Algorithms for Learning Kernels
-          Based on Centered Alignment." *JMLR*, 13, 795--828.  (CKA.)
+        * Scholkopf, B., Smola, A. J., and Muller, K.-R. (1998).
+          "Nonlinear Component Analysis as a Kernel Eigenvalue Problem."
+          *Neural Computation*, 10(5), 1299--1319.  (Kernel PCA.)
+        * Bakir, G., Weston, J., and Scholkopf, B. (2004). "Learning to
+          Find Pre-Images." *NeurIPS*.  (Kernel ridge regression
+          pre-image reconstruction.)
+        * Cortes, C., Mohri, M., and Rostamizadeh, A. (2012).
+          "Algorithms for Learning Kernels Based on Centered Alignment."
+          *JMLR*, 13, 795--828.  (CKA definition and properties.)
         * Pedregosa, F. et al. (2011). "Scikit-learn: Machine Learning
-          in Python." *JMLR*, 12, 2825--2830.  (KernelPCA centering
-          pattern.)
+          in Python." *JMLR*, 12, 2825--2830.  (``KernelPCA`` centering
+          pattern and out-of-sample extension.)
+        * Kingma, D. P. and Ba, J. (2015). "Adam: A Method for
+          Stochastic Optimization." *ICLR*.  (Adam optimizer.)
 
     See Also:
-        :class:`FairPCA`: Primal-form (linear) fair PCA.
-        :class:`FairKernelRidge`: Dual-form fair regression.
+        :class:`FairPCA`: Primal-form (linear) fair PCA; operates in
+            :math:`\mathbb{R}^d` rather than the RKHS.
+        :class:`FairKernelRidge`: Dual-form fair regression using the
+            same kernel machinery.
         :func:`~fairkl.ops.centering.center_kernel`: Kernel centering
-            used internally.
+            function used internally.
+        :func:`~fairkl.kernels.exact.rbf_kernel`: The RBF kernel
+            function.
     """
 
     def __init__(
@@ -173,42 +261,70 @@ class FairKernelPCA(keras.Model):
         coefficient matrix :math:`V` via Adam gradient descent on:
 
         .. math::
-            \mathcal{L} =
-              - \frac{1}{n}\|K_c V\|_F^2
-              + \mu\, \mathrm{CKA}(K_c V, q)
-              + w_{\mathrm{ortho}}\, \|V^\top V - I_k\|_F^2
+            \mathcal{L}(V) =
+              \underbrace{- \frac{1}{n}\|K_c V\|_F^2}_{\text{neg. variance}}
+              + \underbrace{\mu\, \mathrm{CKA}(K_c V, q)}_{\text{fairness}}
+              + \underbrace{w_{\mathrm{ortho}}\, \|V^\top V - I_k\|_F^2}_{
+                    \text{orthogonality}}
 
-        **Centering statistics stored:**
+        **Algorithm steps:**
+
+        1. Compute the kernel matrix :math:`K \in \mathbb{R}^{n
+           \times n}`.
+        2. Store centering statistics:
+           :math:`\bar{K}_{\mathrm{col}}` (shape ``(1, n)``) and
+           :math:`\bar{K}_{\mathrm{total}}` (scalar).
+        3. Center the kernel: :math:`K_c = H K H`.
+        4. Initialize :math:`V` (Glorot uniform, only on first call).
+        5. For ``epochs`` iterations: compute gradients
+           :math:`\nabla_V \mathcal{L}` via ``jax.value_and_grad`` and
+           apply Adam update.
+
+        **Centering statistics stored** (for out-of-sample
+        :meth:`transform`):
 
         * ``_K_col_mean``: shape ``(1, n)`` -- column means of the
-          training kernel matrix.
+          training kernel matrix :math:`K`.
         * ``_K_total_mean``: scalar -- grand mean of the training
-          kernel matrix.
-
-        These are used by :meth:`transform` to center cross-kernel
-        matrices without recomputing :math:`K_{\text{train}}`.
+          kernel matrix :math:`K`.
 
         Args:
-            X (array-like): Training inputs of shape ``(n, d)`` where
+            X (array-like of shape ``(n, d)``): Training inputs where
                 ``n`` is the number of samples and ``d`` is the feature
-                dimensionality.  Converted to float32.
-            q (array-like or None): Sensitive attributes of shape
-                ``(n, d_q)``.  When ``None`` or when ``mu=0``, the
-                fairness penalty is omitted.
-            epochs (int): Number of full-batch Adam epochs.  Default
-                ``200``.
-            lr (float): Adam learning rate.  Default ``1e-2``.
-            **kwargs: Unused; accepted for API compatibility.
+                dimensionality.  Converted to float32.  Stored as
+                ``self._X_train`` for cross-kernel computation.
+            q (array-like of shape ``(n, d_q)`` or None): Sensitive
+                attributes.  When ``None`` or when ``mu=0``, the
+                fairness penalty is omitted.  Automatically expanded to
+                ``(n, 1)`` if 1-D.
+            epochs (int): Number of full-batch Adam epochs.  Typical
+                values: 200--500.  Default ``200``.
+            lr (float): Adam learning rate.  Typical values: ``1e-3``
+                to ``1e-2``.  Default ``1e-2``.
+            **kwargs: Unused; accepted for API compatibility with
+                scikit-learn-style interfaces.
 
         Returns:
-            self: The fitted model instance (for method chaining).
+            FairKernelPCA: The fitted model instance (``self``), for
+            method chaining (e.g.
+            ``Z = model.fit(X, q=q).transform(X_test)``).
+
+        Examples:
+            >>> model = FairKernelPCA(n_components=3, sigma=1.0, mu=0.5)
+            >>> model.fit(X_train, q=q, epochs=200, lr=1e-2)
+            >>> Z = model.transform(X_test)
 
         Note:
-            The kernel matrix :math:`K` is computed once and centered
-            in :math:`O(n^2)`.  Each epoch then costs
-            :math:`O(n^2 k)` for the projection gradient.  ``V`` is
-            initialized only on the first call; subsequent calls to
-            ``fit`` reuse the existing ``V`` as a warm start.
+            * The kernel matrix :math:`K` is computed once
+              (:math:`O(n^2 d)`) and centered (:math:`O(n^2)`).  Each
+              epoch then costs :math:`O(n^2 k)` for the projection
+              gradient.
+            * ``V`` is initialized only on the first call to ``fit``;
+              subsequent calls reuse the existing ``V`` as a warm start,
+              which can be useful for iterating over fairness penalty
+              weights.
+            * The orthogonality penalty weight is fixed at ``10.0``
+              internally.
         """
         X = ops.convert_to_tensor(X, dtype="float32")
         if q is not None:
@@ -265,7 +381,8 @@ class FairKernelPCA(keras.Model):
     def _center_cross_kernel(self, K_cross):
         r"""Center a cross-kernel matrix using stored training statistics.
 
-        Implements the scikit-learn ``KernelCenterer.transform`` formula:
+        Implements the scikit-learn ``KernelCenterer.transform`` formula
+        (see ``sklearn.preprocessing.KernelCenterer``):
 
         .. math::
             \tilde{K} = K_{\text{cross}}
@@ -273,15 +390,24 @@ class FairKernelPCA(keras.Model):
               - \mathrm{rowmean}(K_{\text{cross}})
               + \bar{K}_{\text{total}}
 
-        where :math:`\bar{K}_{\text{col}}` and
-        :math:`\bar{K}_{\text{total}}` are the column means and grand
-        mean of the *training* kernel stored during :meth:`fit`.
+        where :math:`\bar{K}_{\text{col}} \in \mathbb{R}^{1 \times n}`
+        and :math:`\bar{K}_{\text{total}} \in \mathbb{R}` are the
+        column means and grand mean of the *training* kernel matrix,
+        stored during :meth:`fit`.  The row mean is computed from the
+        cross-kernel itself.
+
+        This operation is equivalent to applying the double-centering
+        :math:`\tilde{K} = H_{\text{test}} K_{\text{cross}}
+        H_{\text{train}}` without explicitly constructing the
+        centering matrices.
 
         Args:
-            K_cross: Cross-kernel matrix of shape ``(m, n)``.
+            K_cross (Tensor of shape ``(m, n)``): Cross-kernel matrix
+                between ``m`` test points and ``n`` training points.
 
         Returns:
-            Centered cross-kernel matrix of shape ``(m, n)``.
+            Tensor of shape ``(m, n)`` with dtype float32 -- the
+            centered cross-kernel matrix.
         """
         row_mean = ops.mean(K_cross, axis=1, keepdims=True)  # (m, 1)
         return K_cross - self._K_col_mean - row_mean + self._K_total_mean
@@ -290,34 +416,50 @@ class FairKernelPCA(keras.Model):
         r"""Project new data into the fair kernel PCA space.
 
         Computes the cross-kernel matrix
-        :math:`K_{\text{cross}} = k(X_{\text{test}}, X_{\text{train}})`
-        and centers it using the stored training statistics (column
-        means and global mean from ``fit``).  The centered cross-kernel
-        is then multiplied by the dual coefficient matrix :math:`V`:
+        :math:`K_{\text{cross}} = k(X_{\text{test}}, X_{\text{train}})
+        \in \mathbb{R}^{m \times n}` and centers it using the stored
+        training statistics (column means and global mean from
+        :meth:`fit`).  The centered cross-kernel is then multiplied by
+        the dual coefficient matrix :math:`V`:
 
         .. math::
             Z = \tilde{K}_{\text{cross}}\, V
 
-        where :math:`\tilde{K}` is the centered cross-kernel.  This
-        avoids recomputing or storing the full training kernel matrix.
+        where :math:`\tilde{K} \in \mathbb{R}^{m \times n}` is the
+        centered cross-kernel.  This avoids recomputing or storing the
+        full ``(n, n)`` training kernel matrix.
 
         Args:
-            X (array-like): Test inputs of shape ``(m, d)`` where ``d``
+            X (array-like of shape ``(m, d)``): Test inputs where ``d``
                 must match the training feature dimensionality.
 
         Returns:
             Tensor of shape ``(m, n_components)`` with dtype float32
-            containing the kernel PCA projections.
+            containing the kernel PCA projections.  Each row is the
+            ``k``-dimensional representation of one test sample.
+
+        Raises:
+            AttributeError: If called before :meth:`fit` (centering
+                statistics not available).
+
+        Examples:
+            >>> model.fit(X_train, q=q, epochs=200)
+            >>> Z_train = model.transform(X_train)   # (n, k)
+            >>> Z_new = model.transform(X_new)       # (m, k)
 
         Note:
-            The centering formula follows the scikit-learn
-            ``KernelCenterer.transform`` convention:
+            * The centering formula follows the scikit-learn
+              ``KernelCenterer.transform`` convention:
 
-            .. math::
-                \tilde{K} = K_{\text{cross}}
-                  - \bar{K}_{\text{col}}
-                  - \mathrm{rowmean}(K_{\text{cross}})
-                  + \bar{K}_{\text{total}}
+              .. math::
+                  \tilde{K} = K_{\text{cross}}
+                    - \bar{K}_{\text{col}}
+                    - \mathrm{rowmean}(K_{\text{cross}})
+                    + \bar{K}_{\text{total}}
+
+            * **Complexity:** :math:`O(m \cdot n \cdot d)` to build the
+              cross-kernel, plus :math:`O(m \cdot n \cdot k)` for the
+              matrix product :math:`\tilde{K} V`.
         """
         X = ops.convert_to_tensor(X)
         K_cross = self._compute_kernel(X, self._X_train)  # (m, n)
@@ -328,25 +470,44 @@ class FairKernelPCA(keras.Model):
         r"""Approximate pre-image via kernel ridge regression.
 
         Reconstructs inputs from their kernel PCA projections by
-        learning a mapping from projection space back to input space.
-        The pre-image problem is solved via kernel ridge regression
-        following Bakir et al. (2004):
+        learning a mapping from the low-dimensional projection space
+        back to the original input space.  The pre-image problem is
+        inherently ill-posed for non-linear kernels (a point in RKHS
+        may not correspond to any point in input space), so kernel
+        ridge regression is used as an approximate solution following
+        Bakir et al. (2004).
 
-        1. Compute training projections :math:`Z_{\text{train}} = K_c V`.
-        2. Build the kernel in projection space:
-           :math:`K_Z = Z_{\text{train}} Z_{\text{train}}^\top`.
-        3. Solve the ridge system for dual coefficients:
-           :math:`C = (K_Z + \alpha I)^{-1} X_{\text{train}}`.
-        4. Map new projections: :math:`\hat{X} = K(Z, Z_{\text{train}})\, C`
-           where :math:`K(Z, Z_{\text{train}}) = Z Z_{\text{train}}^\top`.
+        **Algorithm:**
+
+        1. Recompute training kernel :math:`K` and center it:
+           :math:`K_c = HKH`.
+        2. Compute training projections:
+           :math:`Z_{\text{train}} = K_c V \in \mathbb{R}^{n \times k}`.
+        3. Build the linear kernel in projection space:
+           :math:`K_Z = Z_{\text{train}} Z_{\text{train}}^\top
+           \in \mathbb{R}^{n \times n}`.
+        4. Solve the ridge system for dual coefficients:
+           :math:`C = (K_Z + \alpha I)^{-1} X_{\text{train}}
+           \in \mathbb{R}^{n \times d}`.
+        5. Map new projections to input space:
+           :math:`\hat{X} = Z Z_{\text{train}}^\top C
+           \in \mathbb{R}^{m \times d}`.
 
         Args:
-            Z (array-like): Projections of shape ``(m, n_components)``
+            Z (array-like of shape ``(m, n_components)``): Projections
                 as returned by :meth:`transform`.
 
         Returns:
             Tensor of shape ``(m, d)`` with dtype float32 containing
             the approximate reconstructed inputs.
+
+        Raises:
+            AttributeError: If called before :meth:`fit`.
+
+        Examples:
+            >>> model.fit(X_train, q=q, epochs=200)
+            >>> Z = model.transform(X_train)
+            >>> X_hat = model.inverse_transform(Z)  # shape (n, d)
 
         Note:
             * This method recomputes the training kernel and
@@ -355,12 +516,16 @@ class FairKernelPCA(keras.Model):
               repeatedly with the same ``Z``.
             * The ``alpha`` constructor parameter controls the ridge
               regularization of the pre-image regression.  Too-small
-              values may lead to numerical instability; too-large values
-              produce overly smooth reconstructions.
+              values may lead to numerical instability (ill-conditioned
+              system); too-large values produce overly smooth
+              reconstructions.
+            * The pre-image quality depends on the kernel and the number
+              of components.  For RBF kernels with many components, the
+              reconstruction can be quite accurate.
 
         References:
-            * Bakir, G. et al. (2004). "Learning to Find Pre-Images."
-              *NeurIPS*.
+            * Bakir, G., Weston, J., and Scholkopf, B. (2004).
+              "Learning to Find Pre-Images." *NeurIPS*.
         """
         # Compute training projections
         K_train = self._compute_kernel(self._X_train)
@@ -381,19 +546,26 @@ class FairKernelPCA(keras.Model):
         """Fit the model and project the training data in one call.
 
         Equivalent to ``model.fit(X, q=q, **kwargs)`` followed by
-        projecting with the training kernel, but avoids an extra
-        cross-kernel computation by reusing the centered training
-        kernel directly.
+        ``model.transform(X)``, but more efficient because it reuses
+        the centered training kernel :math:`K_c` directly (computed
+        during ``fit``) instead of recomputing the cross-kernel and
+        centering it via the stored statistics.
 
         Args:
-            X (array-like): Training inputs of shape ``(n, d)``.
-            q (array-like or None): Sensitive attributes of shape
-                ``(n, d_q)``.
-            **kwargs: Forwarded to :meth:`fit` (e.g. ``epochs``, ``lr``).
+            X (array-like of shape ``(n, d)``): Training inputs.
+            q (array-like of shape ``(n, d_q)`` or None): Sensitive
+                attributes.
+            **kwargs: Forwarded to :meth:`fit` (e.g. ``epochs``,
+                ``lr``).
 
         Returns:
             Tensor of shape ``(n, n_components)`` with dtype float32
             containing the kernel PCA projections of the training data.
+
+        Examples:
+            >>> model = FairKernelPCA(n_components=3, sigma=1.0, mu=0.5)
+            >>> Z = model.fit_transform(X, q=q, epochs=200, lr=1e-2)
+            >>> Z.shape  # (n, 3)
         """
         self.fit(X, q=q, **kwargs)
         K = self._compute_kernel(X)
@@ -401,9 +573,32 @@ class FairKernelPCA(keras.Model):
         return ops.matmul(K_c, self._V)
 
     def call(self, X):
+        """Forward pass (delegates to :meth:`transform`).
+
+        This method satisfies the ``keras.Model`` interface, allowing
+        the model to be used in Keras pipelines and with ``model(X)``
+        syntax.  It is functionally identical to :meth:`transform`.
+
+        Args:
+            X (array-like of shape ``(m, d)``): Input data.
+
+        Returns:
+            Tensor of shape ``(m, n_components)`` with dtype float32.
+        """
         return self.transform(X)
 
     def get_config(self):
+        """Return the model configuration as a serializable dict.
+
+        Extends the base ``keras.Model.get_config`` with all
+        constructor arguments (``n_components``, ``sigma``, ``mu``,
+        ``sigma_q``, ``kernel``, ``alpha``), enabling reconstruction
+        via ``keras.Model.from_config``.
+
+        Returns:
+            dict: Configuration dictionary.  Keys include all base-class
+            config entries plus the six constructor parameters.
+        """
         config = super().get_config()
         config.update(
             n_components=self.n_components,

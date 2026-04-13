@@ -16,6 +16,8 @@
 # # FairKernelPCA
 #
 # Fair kernel PCA with CKA penalty.
+#
+# FairKernelPCA extends fair dimensionality reduction to nonlinear manifolds via the kernel trick. It stores centering statistics from training for efficient out-of-sample projection, and supports pre-image reconstruction via kernel ridge regression (Bakir et al. 2004).
 
 # %%
 from __future__ import annotations
@@ -121,8 +123,15 @@ plt.show()
 # %% [markdown]
 # ## Reconstruction via Pre-Image
 #
-# ``inverse_transform`` uses kernel ridge regression (Bakir et al. 2004)
-# to map projections back to input space.
+# ``inverse_transform`` uses kernel ridge regression (Bakir et al. 2004) to map projections back to input space.
+#
+# > **Why kernel ridge for pre-images?** In kernel PCA there is no
+# > explicit inverse mapping from the feature space back to input space.
+# > The pre-image approach fits a kernel ridge regressor from the
+# > projected coordinates Z back to the original X, using the same RBF
+# > kernel. This is approximate -- reconstruction error grows with the
+# > fairness penalty since fair projections discard group-correlated
+# > variance.
 
 # %%
 X_hat_std = np.array(kpca_std.inverse_transform(Z_std))

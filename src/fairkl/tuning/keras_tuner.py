@@ -1,8 +1,10 @@
 """KerasTuner search space helpers for fair kernel models.
 
-Provides ``FairKernelRidgeHyperModel``, a ``keras_tuner.HyperModel``
-subclass that tunes all hyperparameters (sigma, lam, mu, sigma_q,
-epochs, lr) of ``FairKernelRidge``.
+Provides :class:`FairKernelRidgeHyperModel`, a
+:class:`keras_tuner.HyperModel` subclass that defines the full search
+space for :class:`~fairkl.models.fair_kernel_ridge.FairKernelRidge`.
+Six hyperparameters are tuned: ``sigma``, ``lam``, ``mu``, ``sigma_q``,
+``epochs``, and ``lr``.
 
 Requires: ``pip install keras-tuner`` (or ``pip install fairkl[tuning]``).
 """
@@ -25,19 +27,84 @@ except ImportError as exc:  # pragma: no cover
 
 
 class FairKernelRidgeHyperModel(kt.HyperModel):
-    """KerasTuner HyperModel for ``FairKernelRidge``.
+    """KerasTuner HyperModel that defines the search space for ``FairKernelRidge``.
 
-    Tunes kernel bandwidth (sigma), ridge regularization (lam),
-    fairness weight (mu), sensitive kernel bandwidth (sigma_q),
-    and training parameters (epochs, lr).
+    Subclasses :class:`keras_tuner.HyperModel` and implements
+    :meth:`build` and :meth:`fit` so that any KerasTuner search
+    algorithm (``RandomSearch``, ``BayesianOptimization``,
+    ``Hyperband``, etc.) can be used to tune the six
+    hyperparameters of
+    :class:`~fairkl.models.fair_kernel_ridge.FairKernelRidge`.
+
+    The default search ranges are:
+
+    ===============  ===============  ==========  ==========  ==========
+    Hyperparameter   Type             Min         Max         Sampling
+    ===============  ===============  ==========  ==========  ==========
+    ``sigma``        ``Float``        0.1         5.0         log
+    ``lam``          ``Float``        1e-4        1.0         log
+    ``mu``           ``Float``        0.0         20.0        step=1.0
+    ``sigma_q``      ``Float``        0.1         5.0         log
+    ``epochs``       ``Int``          50          300         step=50
+    ``lr``           ``Float``        1e-3        0.05        log
+    ===============  ===============  ==========  ==========  ==========
+
+    Training and validation data are passed at construction time (not
+    through ``tuner.search()``) because ``FairKernelRidge`` is a
+    non-standard Keras model whose ``fit`` signature accepts a *q*
+    argument.
 
     Args:
-        X_train: Training features of shape ``(n, d)``.
-        y_train: Targets of shape ``(n,)``.
-        q_train: Sensitive attributes of shape ``(n, d_q)`` or ``None``.
-        X_val: Validation features.
-        y_val: Validation targets.
-        q_val: Validation sensitive attributes.
+        X_train (np.ndarray): Training features of shape ``(n, d)``,
+            dtype ``float32`` or ``float64``.
+        y_train (np.ndarray): Training targets of shape ``(n,)``.
+        q_train (np.ndarray | None): Sensitive / protected attributes
+            of shape ``(n, d_q)`` used for the CKA fairness penalty.
+            Pass ``None`` for standard (unfair) kernel ridge regression.
+        X_val (np.ndarray | None): Validation features of shape
+            ``(n_val, d)``.  If ``None``, training data is used for
+            evaluation (not recommended except for quick sanity checks).
+        y_val (np.ndarray | None): Validation targets of shape
+            ``(n_val,)``.
+        q_val (np.ndarray | None): Validation sensitive attributes of
+            shape ``(n_val, d_q)``.  Required for computing the
+            ``val_cka`` metric; ignored if ``None``.
+        **kwargs: Additional keyword arguments forwarded to
+            ``keras_tuner.HyperModel.__init__``.
+
+    Examples:
+        >>> import numpy as np
+        >>> import keras_tuner as kt
+        >>> from fairkl.tuning.keras_tuner import FairKernelRidgeHyperModel
+        >>> X_tr = np.random.randn(200, 5).astype("float32")
+        >>> y_tr = np.random.randn(200).astype("float32")
+        >>> q_tr = np.random.randn(200, 1).astype("float32")
+        >>> hm = FairKernelRidgeHyperModel(
+        ...     X_train=X_tr, y_train=y_tr, q_train=q_tr,
+        ... )
+        >>> tuner = kt.RandomSearch(
+        ...     hm,
+        ...     objective=kt.Objective("val_mse", direction="min"),
+        ...     max_trials=20,
+        ...     directory="tuner_results",
+        ...     project_name="fair_krr",
+        ... )
+        >>> tuner.search()                           # doctest: +SKIP
+        >>> best_hp = tuner.get_best_hyperparameters()[0]
+
+    Note:
+        The :meth:`fit` method returns a plain ``dict`` (not a Keras
+        ``History`` object).  KerasTuner interprets dictionary return
+        values as single-epoch metric snapshots, which is appropriate
+        here because ``FairKernelRidge.fit`` runs its own internal
+        training loop.
+
+    See Also:
+        :class:`~fairkl.models.fair_kernel_ridge.FairKernelRidge`: The
+            model being tuned.
+        :class:`~fairkl.sklearn_compat.wrappers.FairKRREstimator`:
+            scikit-learn wrapper (use with ``GridSearchCV`` instead of
+            KerasTuner).
     """
 
     def __init__(
@@ -59,7 +126,25 @@ class FairKernelRidgeHyperModel(kt.HyperModel):
         self.q_val = q_val
 
     def build(self, hp):
-        """Build a ``FairKernelRidge`` model with tunable hyperparameters."""
+        """Build a ``FairKernelRidge`` model with tunable hyperparameters.
+
+        Samples four continuous hyperparameters from the search space
+        defined by *hp*:
+
+        * ``sigma`` -- RBF bandwidth, log-uniform in ``[0.1, 5.0]``
+        * ``lam`` -- ridge penalty, log-uniform in ``[1e-4, 1.0]``
+        * ``mu`` -- fairness weight, uniform grid ``{0, 1, ..., 20}``
+        * ``sigma_q`` -- sensitive-kernel bandwidth, log-uniform in
+          ``[0.1, 5.0]``
+
+        Args:
+            hp (keras_tuner.HyperParameters): KerasTuner hyperparameter
+                container used to register and sample values.
+
+        Returns:
+            FairKernelRidge: An untrained model instance configured with
+            the sampled hyperparameters.
+        """
         sigma = hp.Float("sigma", min_value=0.1, max_value=5.0, sampling="log")
         lam = hp.Float("lam", min_value=1e-4, max_value=1.0, sampling="log")
         mu = hp.Float("mu", min_value=0.0, max_value=20.0, step=1.0)
@@ -69,8 +154,34 @@ class FairKernelRidgeHyperModel(kt.HyperModel):
     def fit(self, hp, model, *args, **kwargs):
         """Train the model and return validation metrics.
 
+        Samples two additional training hyperparameters from *hp*:
+
+        * ``epochs`` -- integer in ``{50, 100, 150, ..., 300}``
+        * ``lr`` -- learning rate, log-uniform in ``[1e-3, 0.05]``
+
+        The model is trained on ``(X_train, y_train, q_train)`` using
+        ``FairKernelRidge.fit``.  Evaluation is performed on the
+        validation split if provided, otherwise on the training data.
+
+        Two metrics are computed:
+
+        * ``val_mse`` -- mean squared error between predictions and
+          targets.
+        * ``val_cka`` -- CKA dependence between predictions and
+          sensitive attributes (via :func:`~fairkl.metrics.cka.cka_rbf`).
+          Set to ``0.0`` when no sensitive attributes are available.
+
+        Args:
+            hp (keras_tuner.HyperParameters): KerasTuner hyperparameter
+                container (shared with :meth:`build`).
+            model (FairKernelRidge): The model instance returned by
+                :meth:`build`.
+            *args: Unused positional arguments (KerasTuner compatibility).
+            **kwargs: Unused keyword arguments (KerasTuner compatibility).
+
         Returns:
-            Dictionary with ``val_mse`` and ``val_cka`` keys.
+            dict[str, float]: A dictionary with keys ``"val_mse"`` and
+            ``"val_cka"``.  KerasTuner reads these to rank trials.
         """
         epochs = hp.Int("epochs", min_value=50, max_value=300, step=50)
         lr = hp.Float("lr", min_value=1e-3, max_value=0.05, sampling="log")

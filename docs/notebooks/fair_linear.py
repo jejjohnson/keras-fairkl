@@ -16,6 +16,8 @@
 # # FairLinear
 #
 # Fair linear regression via gradient descent with CKA penalty (100 epochs).
+#
+# FairLinear is the simplest fair model -- linear regression with an L2 penalty and CKA fairness term. Use it when the relationship between features and target is approximately linear and you need a fast, interpretable baseline.
 
 # %%
 from __future__ import annotations
@@ -48,6 +50,12 @@ print(f"Corr(y, q) = {np.corrcoef(y, q.ravel())[0, 1]:.3f}")
 
 # %% [markdown]
 # ## Training
+#
+# > **Warm-starting pattern.** Train `mu=0` first (pure regression, no
+# > fairness penalty), extract its learned weights, then re-initialize
+# > higher-`mu` models from those weights. This avoids training each
+# > model from random initialization and ensures the optimizer only needs
+# > to adjust for the fairness penalty, not re-learn the regression fit.
 
 # %%
 mus = [0.0, 0.5, 2.0, 10.0]

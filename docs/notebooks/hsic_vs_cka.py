@@ -15,10 +15,9 @@
 # %% [markdown]
 # # HSIC vs CKA
 #
-# Raw HSIC is unbounded and its magnitude depends on sample size and
-# kernel bandwidth.  **CKA** normalizes HSIC to [0, 1], making it
-# interpretable and — with linear kernels — exactly scale-invariant.
-# **Debiased CKA** further corrects finite-sample bias.
+# Raw HSIC is unbounded and its magnitude depends on sample size and kernel bandwidth.  **CKA** normalizes HSIC to [0, 1], making it interpretable and — with linear kernels — exactly scale-invariant. **Debiased CKA** further corrects finite-sample bias.
+#
+# Side-by-side comparison of HSIC and CKA as dependence measures. HSIC is unbounded and its magnitude depends on sample size and kernel bandwidth. CKA normalizes HSIC to [0, 1], making it interpretable. With linear kernels, CKA is also exactly scale-invariant. Look for how the two metrics diverge as data dimensionality increases.
 
 # %%
 from __future__ import annotations
@@ -36,12 +35,9 @@ from _style import SCATTER_KW, style_ax
 # %% [markdown]
 # ## 1. Scale Invariance (Linear Kernels)
 #
-# With **linear** kernels, $\text{HSIC}(cf, q) = c^2 \cdot \text{HSIC}(f, q)$
-# while CKA is exactly invariant: the $c^2$ cancels in the ratio.
+# With **linear** kernels, $\text{HSIC}(cf, q) = c^2 \cdot \text{HSIC}(f, q)$ while CKA is exactly invariant: the $c^2$ cancels in the ratio.
 #
-# With RBF kernels and fixed bandwidth, both metrics change when data
-# is scaled (the kernel matrix itself changes).  The key advantage of
-# CKA is **boundedness** [0, 1], not scale invariance per se.
+# With RBF kernels and fixed bandwidth, both metrics change when data is scaled (the kernel matrix itself changes).  The key advantage of CKA is **boundedness** [0, 1], not scale invariance per se.
 
 # %%
 rng = np.random.default_rng(0)
@@ -105,6 +101,13 @@ plt.show()
 # ## 3. Biased vs Debiased CKA
 #
 # With random high-dimensional data, biased CKA inflates.
+#
+# > **When does debiasing matter?** The bias in standard CKA grows when
+# > the feature dimension d is large relative to the sample size n. For
+# > small n and high d (e.g. n=50, d=500), biased CKA reports spurious
+# > dependence between independent random matrices. Debiased CKA
+# > (Nguyen et al. 2020) subtracts the expected bias term, keeping the
+# > estimate near zero for truly independent data.
 
 # %%
 dims = [2, 10, 50, 200, 500]
