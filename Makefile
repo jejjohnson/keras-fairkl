@@ -36,7 +36,7 @@ PKG_VERSION := $(shell grep -E '^version\s*=' pyproject.toml 2>/dev/null \
 # ---------------------------------------------------------------------------
 # Paths (override via .env or command line)
 # ---------------------------------------------------------------------------
-PKGROOT ?= src/mypackage
+PKGROOT ?= src/fairkl
 
 # ---------------------------------------------------------------------------
 # ANSI colours

@@ -1,8 +1,8 @@
-site_name: mypackage
-site_description: My short description for my project.
+site_name: fairkl
+site_description: Fairness-constrained kernel learning for Keras 3.
 site_author: J. Emmanuel Johnson
-repo_url: https://github.com/jejjohnson/pypackage_template
-repo_name: jejjohnson/pypackage_template
+repo_url: https://github.com/jejjohnson/keras-fairkl
+repo_name: jejjohnson/keras-fairkl
 
 theme:
   name: material
@@ -39,11 +39,22 @@ plugins:
   - mkdocs-jupyter:
       execute: false
       ignore_h1_titles: true
+      include: ["*.ipynb"]
 
 nav:
   - Home: index.md
+  - Tutorials:
+      - "Part 1 — Primitives & Fair Objective": notebooks/tutorial_fair_krr_part1.ipynb
+      - "Part 2 — Scikit-learn & Cross-Validation": notebooks/tutorial_fair_krr_part2.ipynb
+      - "Part 3 — fairkl API & Keras": notebooks/tutorial_fair_krr_part3.ipynb
+      - "Part 4 — Keras Tuner": notebooks/tutorial_fair_krr_part4.ipynb
   - Examples:
-      - Demo: notebooks/example_demo.py
+      - Kernel Primitives: notebooks/primitives.ipynb
+      - FairKernelRidge: notebooks/fair_kernel_ridge.ipynb
+      - FairLinear: notebooks/fair_linear.ipynb
+      - FairPCA: notebooks/fair_pca.ipynb
+      - FairKernelPCA: notebooks/fair_kernel_pca.ipynb
+      - HSIC vs CKA: notebooks/hsic_vs_cka.ipynb
   - API Reference: api/reference.md
   - Changelog: CHANGELOG.md
 

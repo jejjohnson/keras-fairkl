@@ -1,27 +1,27 @@
-# mypackage
+# fairkl
 
-> My short description for my project.
+> Fairness-constrained kernel learning for Keras 3.
 
 ## Installation
 
 ```bash
-pip install mypackage
+pip install fairkl
 ```
 
 Or with `uv`:
 
 ```bash
-uv add mypackage
+uv add fairkl
 ```
 
 ## Quickstart
 
 ```python
-import mypackage
+import fairkl
 ```
 
 ## Links
 
 - [API Reference](api/reference.md)
 - [Changelog](CHANGELOG.md)
-- [GitHub](https://github.com/jejjohnson/pypackage_template)
+- [GitHub](https://github.com/jejjohnson/keras-fairkl)
