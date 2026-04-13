@@ -33,7 +33,7 @@ Repository = "https://github.com/jejjohnson/keras-fairkl"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
+    "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "pre-commit>=4.5.1",
     "jax>=0.9.2",
