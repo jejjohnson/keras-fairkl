@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6](https://github.com/jejjohnson/keras-fairkl/compare/v0.1.5...v0.1.6) (2026-04-14)
+
+
+### Features
+
+* fair model wrapper — bring-your-own-network fairness training ([#8](https://github.com/jejjohnson/keras-fairkl/issues/8)) ([d5d704b](https://github.com/jejjohnson/keras-fairkl/commit/d5d704bd3db54bf1a9964beea636e025cc2e77a1))
+* implement fairkl library — 3-layer kernel fairness stack, tutorials, sklearn/keras-tuner integrations ([#6](https://github.com/jejjohnson/keras-fairkl/issues/6)) ([fb04cc3](https://github.com/jejjohnson/keras-fairkl/commit/fb04cc3c218f4473060494204efe73f0208dc11c))
+
 ## [0.1.5](https://github.com/jejjohnson/pypackage_template/compare/v0.1.4...v0.1.5) (2026-03-25)
 
 
