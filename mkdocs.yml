@@ -55,6 +55,7 @@ nav:
       - FairPCA: notebooks/fair_pca.ipynb
       - FairKernelPCA: notebooks/fair_kernel_pca.ipynb
       - FairModelWrapper: notebooks/fair_model_wrapper.ipynb
+      - "Adult Census — real-world fair learning": notebooks/fair_adult_census.ipynb
       - HSIC vs CKA: notebooks/hsic_vs_cka.ipynb
   - API Reference: api/reference.md
   - Changelog: CHANGELOG.md
