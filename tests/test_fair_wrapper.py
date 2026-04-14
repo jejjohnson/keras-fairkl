@@ -120,3 +120,37 @@ class TestFairModelWrapper:
     def test_default_fairness_loss_is_cka(self):
         model = FairModelWrapper(_small_mlp(), mu=0.5)
         assert isinstance(model.fairness_loss, CKALoss)
+
+    def test_multi_input_base_model_predict(self):
+        """A multi-input base_model must not have its list-input misread as (X, q).
+
+        Regression test for the old tuple-based protocol, which treated any
+        2-element list/tuple as ``(X, q)`` and would have crashed here.
+        """
+        a_in = keras.Input(shape=(3,), name="a")
+        b_in = keras.Input(shape=(2,), name="b")
+        h = keras.layers.Concatenate()([a_in, b_in])
+        out = keras.layers.Dense(1)(h)
+        multi = keras.Model([a_in, b_in], out)
+
+        wrapped = FairModelWrapper(multi, mu=0.5)
+        n = 32
+        a = np.random.randn(n, 3).astype("float32")
+        b = np.random.randn(n, 2).astype("float32")
+        preds = np.asarray(wrapped.predict([a, b], verbose=0))
+        assert preds.shape == (n, 1)
+
+    def test_fairness_only_during_training(self):
+        """Calling the model with training=False must not register fairness loss."""
+        X, y, q = _make_data(n=64)
+        model = FairModelWrapper(_small_mlp(), mu=10.0)
+        model.compile(optimizer="adam", loss="mse")
+        # Build + prime loss trackers via a quick fit.
+        model.fit(X, y, q=q, epochs=1, batch_size=64, verbose=0)
+        # Inference with the packed dict but training=False: no fairness term.
+        packed = {"x": X, "q": q}
+        _ = model(packed, training=False)
+        _ = model(X, training=False)
+        # If we had added a loss under training=False, model.losses would grow
+        # unboundedly across these calls; assert it stays well-bounded.
+        assert len(model.losses) <= 1
