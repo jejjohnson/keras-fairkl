@@ -17,10 +17,10 @@
 #
 # Every fairness-constrained learning method eventually has to prove itself on the **UCI Adult Census Income** dataset. It is the canonical tabular benchmark for algorithmic fairness: 32,000 people, fourteen demographic and economic features, and a binary label for whether their income exceeds \$50K. Two sensitive attributes are built into the schema — gender and race — and both correlate strongly with income in the raw data. Any off-the-shelf classifier will pick up on those correlations.
 #
-# This notebook ports a classic worked example onto `FairModelWrapper`. The source is a Spanish-language TensorFlow tutorial by Valero Laparra that solves the problem with a hand-rolled `GradientTape` training loop and an $|$Pearson correlation$|$ penalty. We keep the *exact same* network architecture, the *exact same* data pipeline, and swap only two things:
+# This notebook ports a classic worked example onto `FairModelWrapper`. The source is a Spanish-language TensorFlow tutorial by Valero Laparra that solves the problem with a hand-rolled `GradientTape` training loop and an `|Pearson correlation|` penalty. We keep the *exact same* network architecture, the *exact same* data pipeline, and swap only two things:
 #
 # 1. The hand-rolled training loop → standard `compile` / `fit`.
-# 2. The linear Pearson correlation penalty → **CKA**, a nonlinear dependence measure that catches structure absolute correlation cannot.
+# 2. The linear Pearson correlation penalty → **CKA**, a nonlinear dependence measure that catches structure that absolute correlation cannot.
 #
 # Nothing else changes. That is the point of the wrapper.
 #
@@ -86,7 +86,6 @@ COLUMNS = [
 
 RACE_LEVELS = ["White", "Asian-Pac-Islander", "Amer-Indian-Eskimo", "Other", "Black"]
 GENDER_LEVELS = ["Male", "Female"]
-INCOME_LEVELS = {"<=50K": 0, ">50K": 0, "<=50K.": 0, ">50K.": 1}  # test file has dots
 
 
 def load_adult(csv_path: str, skip_header: bool) -> np.ndarray:
