@@ -1,6 +1,6 @@
 [project]
 name = "fairkl"
-version = "0.1.5"
+version = "0.1.6"
 description = "Fairness-constrained kernel learning for Keras 3."
 authors = [
     {name="J. Emmanuel Johnson", email="jemanjohnson34@gmail.com"},
